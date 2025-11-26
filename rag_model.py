@@ -15,8 +15,8 @@ SYNONYMS = {
     "staff": "employees",
     "worker": "employees",
     "projcts": "projects",
-    "assignment": "assignments",
-    "dept": "department",
+    "assignment": "projects",
+    "dept": "departments",
     "customer": "clients"
 }
 
@@ -27,24 +27,73 @@ def normalize_query(user_query: str) -> str:
         q = re.sub(rf"\b{word}\b", actual, q, flags=re.IGNORECASE)
     return q
 
-#  SQL Prompt 
+#  UPDATED SQL PROMPT (REPLACED COMPLETELY)
 SQL_PROMPT = """
-You are an expert AI agent for SQL and reasoning. 
-Your job is to convert user questions into valid SQL queries 
-for the IT company database, even if:
+You are an advanced SQL generation AI agent for an IT company database.
 
-- The user has spelling mistakes (e.g., "pendng" → "Pending").  
-- The user uses broken English or incomplete words.  
-- The user asks in puzzle/logical/natural language form.  
+Your responsibilities:
+- Convert ANY natural language question into a valid SQL query.
+- Understand spelling mistakes, short forms, synonyms, and fuzzy language.
+- Identify which table(s) the question refers to, even if user words don't match.
+- Always use existing columns exactly as in the database schema.
 
-Guidelines:
-1. Always return a valid SQL query if the request is database-related.
-   - Use fuzzy matching for possible column values.
-   - Suggest closest matching field or value if exact match is not found.
-2. If the question is NOT SQL-related, answer in plain text.
-3. Do NOT include explanations or markdown in SQL responses — only the SQL query.
+DATABASE SCHEMA (very important, follow EXACT columns):
+--------------------------------------------------------
+TABLE: employees
+    employee_id, first_name, last_name, email, phone_number,
+    hire_date, job_id, salary, department_id
 
-Question: {question}
+TABLE: departments
+    department_id, department_name, manager_id, location_id
+
+TABLE: projects
+    project_id, project_name, start_date, end_date, department_id
+
+TABLE: employee_projects
+    employee_id, project_id, role
+
+TABLE: clients
+    client_id, client_name, contact_email, contact_phone
+
+TABLE: invoices
+    invoice_id, client_id, amount, invoice_date, status
+
+TABLE: users
+    id, username, password_hash, mfa_enabled, mfa_secret
+
+TABLE: audit_log
+    id, user, action, table_name, record_id, details, timestamp
+--------------------------------------------------------
+
+FUZZY SYNONYMS (apply automatically):
+- phone_number → phone, mobile, mob, cell, contact, phone no, mobile no
+- salary → income, pay, earnings
+- first_name → fname, firstname
+- last_name → lname, lastname, sirname
+- department → dept, dpt, dep
+- client → customer, buyer
+- project → task, assignment
+- hire_date → joining date, join date
+- email → mail, email id
+
+RULES:
+1. ALWAYS output a valid SQL query ONLY. No explanation.
+2. If user spelling is wrong, auto-correct it.
+3. If user uses synonyms, map them correctly.
+4. If user asks something impossible (column not in schema):
+      → Replace with the closest correct column.
+5. If the user question is NOT related to database → respond in normal English.
+6. Use simple SELECT queries unless update/insert/delete is clearly requested.
+7. For ambiguous questions → choose the MOST logical interpretation.
+
+EXAMPLES:
+- "show mobile numbr of workers" → phone_number from employees
+- "give me earning of staff" → salary from employees
+- "customer phon no" → contact_phone from clients
+
+NOW CONVERT THE USER QUESTION TO SQL.
+
+User Question: {question}
 """
 
 # Prompt template
@@ -63,7 +112,6 @@ class GroqLangChainSQL:
         normalized_q = normalize_query(user_question)
         prompt = SQL_PROMPT.format(question=normalized_q)
 
-        # Call Groq LLM
         response = groq_client.chat.completions.create(
             model=self.model_name,
             messages=[{"role": "user", "content": prompt}],
@@ -71,27 +119,21 @@ class GroqLangChainSQL:
         )
         llm_output = response.choices[0].message.content.strip()
 
-        # Extract SQL if present
         sql_query = extract_sql_from_llm(llm_output)
 
-        # Execute SQL if valid
         if sql_query and sql_query.upper().startswith(("SELECT", "INSERT", "UPDATE", "DELETE")):
             result = execute_sql_query(sql_query)
-            # Convert list of dicts to rows/columns if needed
             if isinstance(result, list) and result and isinstance(result[0], dict):
                 columns = list(result[0].keys())
                 rows = [list(r.values()) for r in result]
                 result = {"columns": columns, "rows": rows}
         else:
-            # Non-SQL answer → wrap in table format
             sql_query = None
             result = {"columns": ["Answer"], "rows": [[llm_output]]}
 
-        # Ensure dictionary structure
         result.setdefault("columns", [])
         result.setdefault("rows", [])
 
         return {"sql": sql_query, "results": result}
 
-# Instance
 llm_sql = GroqLangChainSQL()
