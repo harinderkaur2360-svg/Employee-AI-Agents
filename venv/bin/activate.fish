@@ -33,7 +33,7 @@ end
 # Unset irrelevant variables.
 deactivate nondestructive
 
-set -gx VIRTUAL_ENV /home/digimantra/Downloads/rag_sql_app1/rag_sql_app/venv
+set -gx VIRTUAL_ENV /home/digimantra/Downloads/rag_sql_app1/Employee_AI_Agent/venv
 
 set -gx _OLD_VIRTUAL_PATH $PATH
 set -gx PATH "$VIRTUAL_ENV/"bin $PATH
